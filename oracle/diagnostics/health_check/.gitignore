@@ -1,0 +1,5 @@
+health_logs_v3/
+health_logs*/
+*.log
+*.log.timeout
+.DS_Store
