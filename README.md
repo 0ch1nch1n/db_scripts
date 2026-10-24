@@ -13,6 +13,8 @@
 
 点击脚本名称查看详细说明，包括适用版本、所需权限、参数、运行方法和验证情况。
 
+SQL Server 孤立用户修复脚本已由维护者验证可用（反馈日期：2026-10-24），默认仍为仅预览。
+
 ## 目录结构
 
 每项脚本使用独立目录，将代码、说明和相关文件放在一起。
@@ -43,9 +45,7 @@ db_scripts/
     └── security/
         └── repair_orphaned_users/
             ├── README.md
-            ├── repair_orphaned_users.sql
-            └── archive/
-                └── repair_orphaned_users.original.sql
+            └── repair_orphaned_users.sql
 ```
 
 目录按 `数据库类型/用途分类/脚本名称/` 组织；文件和目录使用小写英文及下划线，便于查找和引用。
