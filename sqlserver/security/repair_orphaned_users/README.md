@@ -1,13 +1,5 @@
 # SQL Server：批量修复孤立 SQL 用户
 
-[返回仓库首页](../../../README.md)
-
-[查看脚本：repair_orphaned_users.sql](repair_orphaned_users.sql)
-
-批量扫描实例中的用户数据库，用 SID 判断 SQL 用户是否失去服务器登录映射，并将符合条件的用户重新映射到现有同名 SQL Login。默认 `@Execute = 0`，仅扫描和预览。
-
-维护者已验证当前脚本可用，验证反馈记录于 2026-10-24。
-
 ## 功能与适用范围
 
 - 处理 `SQL_USER` 且使用 `INSTANCE` 身份验证的用户，不处理 Windows 用户、Windows 组、contained 用户或外部身份。
