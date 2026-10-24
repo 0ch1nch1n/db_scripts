@@ -9,6 +9,7 @@
 | SQL Server | 安全与权限 | [批量修复孤立 SQL 用户](sqlserver/security/repair_orphaned_users/) | 扫描孤立 SQL 用户，并将符合条件的用户重新映射到现有同名 SQL Login | 仅预览 |
 | Oracle 19c | 巡检与诊断 | [Oracle Health Check v3.1](oracle/diagnostics/health_check/) | 维护前采集基线，维护后比较本机实例、PDB、服务和对象状态 | 采集与比较（需指定 before / after） |
 | PostgreSQL 11+ | 安全与权限 | [统一 schema 对象 owner](postgresql/security/change_schema_object_owner/) | 将指定 schema 内常见对象转移给同一角色，区分重载并处理依附序列 | 仅预览（修订版） |
+| PostgreSQL | 安全与权限 | [导出用户/角色迁移 DDL](postgresql/security/migrate_roles/) | 生成角色、角色参数和成员关系的迁移 SQL，不包含密码及对象授权 | 仅查询并输出 DDL |
 
 点击脚本名称查看详细说明，包括适用版本、所需权限、参数、运行方法和验证情况。
 
@@ -30,11 +31,14 @@ db_scripts/
 │               └── verify_health_check.py
 ├── postgresql/
 │   └── security/
-│       └── change_schema_object_owner/
+│       ├── change_schema_object_owner/
+│       │   ├── README.md
+│       │   ├── change_schema_object_owner.sql
+│       │   └── archive/
+│       │       └── change_schema_object_owner.original.sql
+│       └── migrate_roles/
 │           ├── README.md
-│           ├── change_schema_object_owner.sql
-│           └── archive/
-│               └── change_schema_object_owner.original.sql
+│           └── export_roles.sql
 └── sqlserver/
     └── security/
         └── repair_orphaned_users/
