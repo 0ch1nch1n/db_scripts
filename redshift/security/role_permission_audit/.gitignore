@@ -1,0 +1,14 @@
+exports/
+audit_*/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.csv
+*.csv.part
+manifest.json
+manifest.json.part
+.env
+.env.*
+*.log
+.DS_Store
