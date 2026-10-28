@@ -18,54 +18,6 @@ SQL Server 孤立用户修复脚本已由维护者验证可用（反馈日期：
 
 PostgreSQL 统一 schema 对象 owner 脚本已由维护者验证可用（反馈日期：2026-10-27），默认仍为仅预览。
 
-## 目录结构
-
-每项脚本使用独立目录，将代码、说明和相关文件放在一起。
-
-```text
-db_scripts/
-├── README.md
-├── oracle/
-│   └── diagnostics/
-│       └── health_check/
-│           ├── README.md
-│           ├── health_check_v3_1.sh
-│           ├── VALIDATION.md
-│           ├── .gitignore
-│           └── tests/
-│               └── verify_health_check.py
-├── postgresql/
-│   └── security/
-│       ├── change_schema_object_owner/
-│       │   ├── README.md
-│       │   ├── change_schema_object_owner.sql
-│       │   └── archive/
-│       │       └── change_schema_object_owner.original.sql
-│       └── migrate_roles/
-│           ├── README.md
-│           └── export_roles.sql
-├── redshift/
-│   └── security/
-│       └── role_permission_audit/
-│           ├── README.md
-│           ├── export_redshift_permissions.py
-│           ├── requirements.txt
-│           ├── queries.sql
-│           ├── VALIDATION.md
-│           ├── .gitignore
-│           └── tests/
-│               └── test_export.py
-└── sqlserver/
-    └── security/
-        └── repair_orphaned_users/
-            ├── README.md
-            └── repair_orphaned_users.sql
-```
-
-目录按 `数据库类型/用途分类/脚本名称/` 组织；文件和目录使用小写英文及下划线，便于查找和引用。
-
-随着脚本增加，再按需要创建 `mysql/` 等数据库目录，以及 `backup/`、`maintenance/`、`diagnostics/` 等用途分类。
-
 ## 使用约定
 
 - 运行前先阅读对应脚本目录中的 README，确认适用环境、权限和参数。
