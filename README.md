@@ -10,6 +10,7 @@
 | Oracle 19c | 巡检与诊断 | [Oracle Health Check v3.1](oracle/diagnostics/health_check/) | 维护前采集基线，维护后比较本机实例、PDB、服务和对象状态 | 采集与比较（需指定 before / after） |
 | PostgreSQL 11+ | 安全与权限 | [统一 schema 对象 owner](postgresql/security/change_schema_object_owner/) | 将指定 schema 内常见对象转移给同一角色，区分重载并处理依附序列 | 仅预览 |
 | PostgreSQL | 安全与权限 | [导出用户/角色迁移 DDL](postgresql/security/migrate_roles/) | 生成角色、角色参数和成员关系的迁移 SQL，不包含密码及对象授权 | 仅查询并输出 DDL |
+| PostgreSQL 12+ | 迁移与验证 | [Schema 迁移验证](postgresql/migration/schema_migration_verifier/) | 比较对象清单与定义、精确行数、权限及状态，可选内容指纹 | 采集临时对象；默认精确行数，内容指纹关闭 |
 | Amazon Redshift | 安全与权限 | [角色权限与用户角色 CSV 盘点](redshift/security/role_permission_audit/) | 导出角色、用户直接/间接角色、角色自身及继承权限，记录每项导出状态 | 只读查询并导出 CSV |
 
 点击脚本名称查看详细说明，包括适用版本、所需权限、参数、运行方法和验证情况。
@@ -31,4 +32,5 @@ PostgreSQL 统一 schema 对象 owner 脚本已由维护者验证可用（反馈
 2. 放入脚本和 `README.md`，说明用途、适用版本、权限、参数、运行示例、影响范围和验证情况。
 3. 在本页“脚本索引”中增加一行，链接到该脚本目录。
 4. 日常修改使用 Git 提交历史管理；仅在需要保留独立参考版本时使用 `archive/`，避免不断添加 `v1`、`v2` 或 `final` 文件。
+
 

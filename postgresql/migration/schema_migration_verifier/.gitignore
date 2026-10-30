@@ -1,0 +1,4 @@
+# Generated snapshots and comparison output
+*.csv
+*.log
+comparison*.txt
