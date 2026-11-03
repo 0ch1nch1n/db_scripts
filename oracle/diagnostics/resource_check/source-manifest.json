@@ -7,7 +7,8 @@
   "notes": [
     "The original ZIP and its real database configuration remain local.",
     "original_sha256.json contains historical hashes of earlier files not included in the ZIP; those earlier files were not verified.",
-    "SHA256SUMS covers the public directory including this manifest but excludes itself, runtime output and caches."
+    "SHA256SUMS covers the public directory including this manifest but excludes itself, runtime output and caches.",
+    "v2.1 simplifies statistics into healthy counts and review details, outputs reliable table waste candidates plus coverage counts, and removes historical comparison and independent index structure collection."
   ],
   "files": [
     {
@@ -15,23 +16,24 @@
       "published_path": "CHECK_RULES.md",
       "source_sha256": "f0e1d20dc0d408dbf9e8d7abce97d7782a85edd767180d081aa807e90f88c7f8",
       "disposition": "modified",
-      "published_sha256": "efaa242f5a6f7913250b8ab54448a0e6d3953b3a7aebc1eb32e439fc7774eb72",
-      "reason": "Retained check rules and source links; anonymized database example and clarified repository context and provenance."
+      "published_sha256": "060d0be9ebf4e8a657cfe40a34f917468e2786f07da75b86c2e0916fcb738bd3",
+      "reason": "Updated v2.1 compact statistics, candidate estimation, coverage and version rules; retained Oracle reference links."
     },
     {
       "archive_path": "oracle_resource_check_v2/README.md",
       "published_path": "README.md",
       "source_sha256": "bef0f56d96020fb1ba6c846595d3414547801494f74414e2687de739f93f5c22",
       "disposition": "modified",
-      "published_sha256": "1f2fa61d11a1b06412f433a9e7d91fad4f886d0381f6e16dbeb86fb264ded3e7",
-      "reason": "Rewritten Chinese repository usage, scope, parameters and provenance documentation."
+      "published_sha256": "b2f44c58bd506dff72c322472eb1d237bd5d1ff7b544dee36906e173e2866781",
+      "reason": "Updated Chinese v2.1 usage, compact outputs and compatibility notes."
     },
     {
       "archive_path": "oracle_resource_check_v2/check_resources.sh",
       "published_path": "check_resources.sh",
       "source_sha256": "e1bc0f37a5a0c936d4800aa00326f90012869f2d9f8e3c55a752f578b043bedc",
-      "disposition": "byte_identical",
-      "published_sha256": "e1bc0f37a5a0c936d4800aa00326f90012869f2d9f8e3c55a752f578b043bedc"
+      "disposition": "modified",
+      "published_sha256": "3db8edf344cc14bd96b28fa95654059f7564dcd5292ced09f19117a93dbfb9c0",
+      "reason": "v2.1 uses seven modules, forwards waste thresholds to SQL and removes the baseline option."
     },
     {
       "archive_path": "oracle_resource_check_v2/db_list.conf",
@@ -67,8 +69,9 @@
       "archive_path": "oracle_resource_check_v2/report.py",
       "published_path": "report.py",
       "source_sha256": "701c5332f412b91051a1b8fd1742de53d96cdfddd1c5ba7b891eefe477846e18",
-      "disposition": "byte_identical",
-      "published_sha256": "701c5332f412b91051a1b8fd1742de53d96cdfddd1c5ba7b891eefe477846e18"
+      "disposition": "modified",
+      "published_sha256": "7b79617fd3339b55f45a72a074ca17a8db5be0b4234da044d7a19a2840820748",
+      "reason": "Reports v2.1 compact counts and anomalies, validates compact records, and removes historical trends."
     },
     {
       "archive_path": "oracle_resource_check_v2/sql/common.sql",
@@ -81,15 +84,16 @@
       "archive_path": "oracle_resource_check_v2/sql/index_space.sql",
       "published_path": "sql/index_space.sql",
       "source_sha256": "b481ba5333113cdcd852ecff8b664f5c61c00abd1e293832186924d7f097a770",
-      "disposition": "byte_identical",
-      "published_sha256": "b481ba5333113cdcd852ecff8b664f5c61c00abd1e293832186924d7f097a770"
+      "disposition": "removed_in_v2.1",
+      "reason": "Independent index structure collection removed; previous file remains in Git history."
     },
     {
       "archive_path": "oracle_resource_check_v2/sql/index_stats.sql",
       "published_path": "sql/index_stats.sql",
       "source_sha256": "4dcb4ac3c5104525290b6ea68531214af3b9db4ded8a9b32b37c9c69e7a03613",
-      "disposition": "byte_identical",
-      "published_sha256": "4dcb4ac3c5104525290b6ea68531214af3b9db4ded8a9b32b37c9c69e7a03613"
+      "disposition": "modified",
+      "published_sha256": "ed50cb83e063b648cb77b0eff69672a1a7369843f85163e1133ee219436f2af6",
+      "reason": "Groups healthy statistics and retains review items including UNUSABLE indexes and partitions, without structural metrics."
     },
     {
       "archive_path": "oracle_resource_check_v2/sql/metadata.sql",
@@ -102,15 +106,17 @@
       "archive_path": "oracle_resource_check_v2/sql/table_stats.sql",
       "published_path": "sql/table_stats.sql",
       "source_sha256": "61a7ffcd0f0188d310d2d544d03fb2ac6c9e989791296c29e743952d1dfd54eb",
-      "disposition": "byte_identical",
-      "published_sha256": "61a7ffcd0f0188d310d2d544d03fb2ac6c9e989791296c29e743952d1dfd54eb"
+      "disposition": "modified",
+      "published_sha256": "221297c6f10d7bf0705df7519f1fa6806fbad0f2b46df20e6d0b2a99fdf1c83c",
+      "reason": "Groups healthy statistics by schema/type and preserves review object/partition/scope details."
     },
     {
       "archive_path": "oracle_resource_check_v2/sql/table_waste.sql",
       "published_path": "sql/table_waste.sql",
       "source_sha256": "1752c3f418f40c5005536aefcd2c9360767b2deaa55ec65232b8b9a8830d02b9",
-      "disposition": "byte_identical",
-      "published_sha256": "1752c3f418f40c5005536aefcd2c9360767b2deaa55ec65232b8b9a8830d02b9"
+      "disposition": "modified",
+      "published_sha256": "83cd266f1068ffeffe85c4aa043cb6464e960027877a48f56a7a77964e034c2a",
+      "reason": "Outputs only reliable supported heap candidates above both thresholds plus grouped coverage counts; removes object history joins."
     },
     {
       "archive_path": "oracle_resource_check_v2/sql/tablespace.sql",
@@ -137,8 +143,9 @@
       "archive_path": "oracle_resource_check_v2/tests/test_workflow.py",
       "published_path": "tests/test_workflow.py",
       "source_sha256": "14efecf1429697ba721492a1334ba2cd4060fe8657a557a55456443b9cdeec94",
-      "disposition": "byte_identical",
-      "published_sha256": "14efecf1429697ba721492a1334ba2cd4060fe8657a557a55456443b9cdeec94"
+      "disposition": "modified",
+      "published_sha256": "2f36f16afc983fb08b8c140e7245701a5bb03b4844f59cae8f6692545b4a5297",
+      "reason": "Updates collector/report fixtures and regression cases for v2.1 compact format and seven modules."
     },
     {
       "archive_path": "oracle_resource_check_v2/SHA256SUMS",
@@ -151,6 +158,9 @@
   "added_files": [
     ".gitignore",
     "VALIDATION.md",
-    "source-manifest.json"
-  ]
+    "source-manifest.json",
+    "tests/test_compact_sql.py"
+  ],
+  "tool_version": "2.1",
+  "previous_publication_commit": "40af038cabca2b9d48fd3bb35a8e66babc676af6"
 }

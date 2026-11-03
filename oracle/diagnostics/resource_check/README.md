@@ -1,115 +1,108 @@
-# Oracle Resource Check v2.0
+# Oracle Resource Check v2.1
 
-Oracle 月度资源巡检工具：在数据库主机上通过本机 OS SYSDBA 认证采集数据，再用 Python 生成逐库汇总和可复核明细。
+Oracle 月度资源巡检工具：通过本机 OS SYSDBA 采集字典数据，用 Python 生成汇总和待复核清单。各库、各模块串行执行。
 
 ## 检查内容
 
-| 项目 | 实际行为与判断口径 |
+| 项目 | v2.1 行为 |
 | --- | --- |
-| 表空间 / UNDO | 永久、TEMP、UNDO 容量与使用情况；默认当前容量口径严格 `>90%` 告警；UNDO 为各可见实例最近采样桶 |
-| 表 / 索引统计信息 | 采集表、索引及分区/子分区的分析时间、过期状态、统计锁定与索引状态 |
-| 空间变化复核 | 对支持的普通堆表估算浪费，保存完整顶层表清单；显式指定历史 run 后比较表估算与索引结构变化 |
-| 功能账号 | 按显式账号清单检查预期状态、到期窗口和认证类型；未配置清单时返回 `REVIEW` |
+| 表空间 / UNDO | 永久、TEMP、UNDO 容量和使用情况；默认按当前容量严格 `>90%` 告警；UNDO 查看可见实例最近采样桶 |
+| 表 / 索引统计信息 | 正常对象在 SQL 中按 Schema、对象类型压缩计数；仅导出缺失、过期、锁定、未知及特殊对象等待复核明细 |
+| 空间浪费候选 | 仅对统计信息可靠的普通非分区、非压缩堆表估算；默认同时 `>100 MB` 且 `>30%` 才保留对象明细；其他表保留数量和跳过原因 |
+| 索引状态 | 由统计信息模块检查 `UNUSABLE`，包括分区/子分区；不再采集索引段大小、BLEVEL、叶块数及结构趋势 |
+| 功能账号 | 根据显式清单检查预期状态、到期窗口和认证类型；未配置清单时返回 `REVIEW` |
 
-Shell 调用 `oraenv` 和 SQL*Plus；8 个采集模块分别尝试配置中的本地 SID，失败后可尝试下一 SID，记录每次结果。Python 仅处理已采集 CSV，不连接数据库。
+共 7 个采集模块：`metadata`、`tablespace`、`undo`、`table_stats`、`index_stats`、`table_waste`、`user_accounts`。模块失败后可重试下一本地 SID，保留每次执行结果。
 
 ## 环境与影响
 
-- 目标数据库：Oracle Database 19c；实际 RU、CDB/PDB、RAC 和 non-CDB 的 SQL 兼容性仍需现场验证。
-- 采集主机：Bash 4+、可在 PATH 中找到的 `oraenv`、SQL*Plus 12.2+（建议 19c），以及能够执行 `/ as sysdba` 的操作系统账号。
-- 报表：Python 3.8+，仅标准库，无第三方依赖；可在 Mac 或其他主机离线生成。
-- 数据库操作为字典/动态视图查询及会话级容器、数值格式和时区设置；不执行统计信息收集、账号修改、SHRINK、MOVE、REBUILD 或 Advisor 任务。
-- 在本地创建运行目录、明细、日志和报表；大库上的字典查询成本需先单库评估。
-- RAC 的 SID 列表表示当前主机可尝试的实例，不会通过 SSH 或服务名跨节点连接。UNDO 使用可见 `GV$` 数据。
+- Oracle Database 19c；具体 RU、CDB/PDB、RAC、non-CDB 兼容性需单库现场验证。
+- 采集主机需要 Bash 4+、PATH 中的 `oraenv`、SQL*Plus 12.2+（建议 19c），以及能够执行 `/ as sysdba` 的操作系统账号。
+- 报表需要 Python 3.8+，仅使用标准库，可移到 Mac 或其他主机生成。
+- 仅查询字典/动态视图并设置会话容器、数值格式和时区；不会扫描业务表内容、收集统计信息、修改账号或执行空间维护。
+- 正常统计记录和非候选表在 SQL 输出前压缩，可减少 CSV 和 Python 内存开销；字典仍需查询和分组，不能保证数据库耗时按相同比例下降。独立索引结构查询已移除。
+- 大库首次应在低峰期只配置一个数据库试跑。当前没有 SQL 超时或资源限额。
 
-## 首次使用
+## 使用
 
-公开仓库中的 `db_list.conf` 仅是示例，原附件中的实际数据库映射未上传。
+公开配置为通用示例，实际数据库映射没有上传。先复制并编辑本地配置：
 
 ```bash
 cp db_list.conf db_list.local.conf
 cp functional_accounts.csv functional_accounts.local.csv
-```
-
-先编辑这两份本地文件，再执行：
-
-```bash
 bash check_resources.sh --db-list db_list.local.conf --accounts functional_accounts.local.csv
 ```
 
-数据库清单每行格式如下；前四列需要保留，PDB 可以留空，第五列可选：
+数据库清单：
 
 ```text
 # database_label|local_sid1/local_sid2|expected_db_name|pdb|optional_expected_db_unique_name
 APP_PDB|ORCL1/ORCL2|ORCL|APPPDB|ORCL_PRIMARY
 ```
 
-脚本会核对 `DB_NAME`、可选的 `DB_UNIQUE_NAME` 和目标 PDB。PDB 留空时，CDB 仅检查 root，non-CDB 检查该库，不会遍历全部 PDB。建议首次只配置一个数据库。
+前四列保留，PDB 可为空，第五列可选。脚本核对数据库身份；PDB 留空时 CDB 仅检查 root，不会遍历所有 PDB。SID 为本机可尝试的实例，不会跨 RAC 节点连接。
 
-功能账号格式见 [functional_accounts.example.csv](functional_accounts.example.csv)。默认 `functional_accounts.csv` 只有表头，不猜测业务账号范围；账号有效性不等于已测试应用登录。
+功能账号格式见 [functional_accounts.example.csv](functional_accounts.example.csv)。默认账号清单只有表头，不猜测业务范围，账号元数据也不能证明应用登录成功。
 
-`*.local.conf`、`*.local.csv` 和默认 `output/` 已加入本目录 `.gitignore`。实际配置及采集结果应留在本地；自定义输出路径应放在仓库外。
+`*.local.conf`、`*.local.csv` 和默认 `output/` 已忽略；自定义输出目录应放在仓库外。
 
-## 采集与报表分开执行
-
-数据库主机没有 Python 时：
+## 分开采集和生成报表
 
 ```bash
 bash check_resources.sh --db-list db_list.local.conf --accounts functional_accounts.local.csv --collect-only
 ```
 
-将整个生成的 run 目录和 `report.py` 复制到 Python 主机后执行：
+将整个生成的 run 目录和本版 `report.py` 复制到 Python 主机后执行：
 
 ```bash
 python3 report.py /path/to/collected_run_directory
 ```
 
-后续可显式指定更早的 v2 run 目录作为基线：
-
-```bash
-bash check_resources.sh --db-list db_list.local.conf --accounts functional_accounts.local.csv --baseline /path/to/previous_run_directory
-```
-
-也可仅重新生成报表：
-
-```bash
-python3 report.py /path/to/current_run_directory --baseline /path/to/previous_run_directory
-```
-
-基线必须比当前 run 更早，数据库/容器身份需一致；对象 ID、数据对象 ID 或 DDL 时间变化会单独标记。重新运行报表会重写当前 run 的派生报表，保留采集明细和日志。
+重新执行报表会重写当前 run 的派生报表，保留采集文件和日志。不要同时对同一 run 生成报表。
 
 ## 参数
 
 | 参数 | 默认值 / 用途 |
 | --- | --- |
 | `--db-list FILE` | `db_list.conf`；数据库映射 |
-| `--accounts FILE` | `functional_accounts.csv`；显式功能账号清单 |
-| `--output DIR` | `output/`；每次新建 `run_时间戳_随机后缀/` |
-| `--baseline RUN_DIR` | 无；显式指定更早 v2 run |
+| `--accounts FILE` | `functional_accounts.csv`；功能账号清单 |
+| `--output DIR` | `output/`；每次新建独立 run 目录 |
 | `--threshold NUMBER` | `90`；使用率严格大于阈值 |
-| `--basis CURRENT\|MAX` | `CURRENT`；当前容量或配置最大容量口径 |
+| `--basis CURRENT\|MAX` | `CURRENT`；当前容量或配置最大容量 |
 | `--waste-mb NUMBER` | `100`；表估算候选严格大于该 MB 值 |
-| `--waste-pct NUMBER` | `30`；候选还必须严格大于该百分比 |
-| `--expiry-days INTEGER` | `30`；到期提醒窗口，可由账号行覆盖 |
-| `--collect-only` | 仅采集，稍后生成报表 |
-| `--help` | 查看完整帮助 |
+| `--waste-pct NUMBER` | `30`；候选还须严格大于该百分比 |
+| `--expiry-days INTEGER` | `30`；账号到期提醒窗口，可按账号覆盖 |
+| `--collect-only` | 只采集 |
+| `--help` | 查看帮助 |
 
-## 结果与退出码
+## 看哪些结果
 
-先查看 `monthly_summary.csv`、`monthly_summary.md` 和 `execution_status.csv`，再查看逐库明细和 `logs/`。其余派生文件包括统计汇总、表浪费候选、表/索引变化、账号复核和报表错误记录。
+| 文件 | 用途 |
+| --- | --- |
+| `monthly_summary.csv` / `.md` | 每库四项结论、执行状态和范围说明 |
+| `execution_status.csv` | 7 个模块及候选 SID 的执行记录 |
+| `statistics_summary.csv` | 每库、Schema、对象类型的检查数、待复核数及缺失/过期/锁定/未知/不可用数量 |
+| `statistics_review.csv` | 统计信息待复核和 `UNUSABLE` 索引明细，保留分区身份 |
+| `table_waste_candidates.csv` | 符合两个阈值的可靠堆表估算候选 |
+| `table_waste_summary.csv` | 各 Schema 的已估算表数、候选数和跳过原因数量 |
+| `account_review.csv` | 账号明细与功能账号判断 |
+| `report_errors.csv` | CSV 和压缩记录校验错误 |
+| `数据库标签/*.csv`、`logs/` | 原始采集结果和日志；统计及浪费原始文件已为压缩格式 |
 
-- `0`：执行完成，仍可能存在 `ALERT`、`REVIEW` 或 `NO_BASELINE`。
-- `1`：采集或报表失败，查看执行状态和日志。
-- `2`：参数、配置或依赖错误。
+退出码：`0` 执行完成，仍可能有 `ALERT` 或 `REVIEW`；`1` 采集/报表失败；`2` 参数、配置或依赖错误。没有符合条件的对象、存在跳过范围、缺少业务账号清单时会提示复核。
 
-一次采集代表一个时间快照，不代表整月峰值。表空间 MAX 是文件配置上限，没有检查 ASM/文件系统余量。表浪费是粗略估算，不等于可回收容量；索引结构变化不等于碎片率，也不会自动给出重建建议。完整规则和原有 Oracle 官方参考见 [CHECK_RULES.md](CHECK_RULES.md)。
+## v2.1 格式变化
 
-## 验证与来源
+本版移除历史基线比较和 `--baseline`，不再生成 `table_space_changes.csv`、`index_space_changes.csv`，也不再使用 `NO_BASELINE` 结论。空间项改为 `SPACE_WASTE_CANDIDATES`，只描述当前估算候选和覆盖范围。
 
-发布前重新执行的检查、测试命令和限制见 [VALIDATION.md](VALIDATION.md)。离线验证不代表 SQL 已在真实 Oracle 环境通过。
+`report.py` 只接受 v2.1 run，防止把旧的全量明细误当成新格式。已有 v2.0 run 请配套使用 [v2.0 的 report.py](https://github.com/0ch1nch1n/db_scripts/blob/40af038cabca2b9d48fd3bb35a8e66babc676af6/oracle/diagnostics/resource_check/report.py)。数据库和账号配置格式保持兼容。
 
-来源为用户提供的 `Oracle_Resource_Check_v2.0.zip`。Shell、Python、9 个 SQL 文件（含公共 include）和原有 18 项测试保持字节一致；公开配置替换为通用示例，说明文档按仓库使用方式整理。原 ZIP 保留在本地，未作为公开附件上传。
+一次快照不代表整月峰值；表浪费估算不等于实际可回收容量或确诊碎片率。完整判断规则见 [CHECK_RULES.md](CHECK_RULES.md)，离线验证与现场边界见 [VALIDATION.md](VALIDATION.md)。
 
-- `source-manifest.json`：当前 ZIP 的 SHA-256、每个原始文件的哈希及公开版改动说明。
-- `SHA256SUMS`：当前公开目录的逐文件校验和，不含该校验和文件自身、运行结果与缓存。
-- `original_sha256.json`：附件内自带的更早六个文件的历史哈希，本次没有对应原文件可核验。
+## 来源
+
+基于用户提供的 `Oracle_Resource_Check_v2.0.zip` 和已发布 v2.0 简化；原 ZIP 及实际配置留在本地，原发布版可从 Git 历史追溯。
+
+- `source-manifest.json`：源 ZIP 哈希、原始文件哈希和 v2.1 改动/删除记录。
+- `SHA256SUMS`：当前公开目录校验和，不含自身、运行输出和缓存。
+- `original_sha256.json`：附件自带的更早六个文件历史哈希，对应文件未随包提供，不能视为已核验来源。

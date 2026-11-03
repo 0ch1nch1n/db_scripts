@@ -1,89 +1,78 @@
-# Oracle Resource Check v2.0
+# Oracle Resource Check v2.1 判断规则
 
-用于月度 Oracle 资源维护检查：表空间、表/索引统计信息、空间变化复核、功能账号有效性。
+本版侧重月度巡检的汇总与异常清单。使用方法和参数见 [README.md](README.md)。采集端要求 Bash 4+、oraenv、SQL*Plus 12.2+ 和本机 OS SYSDBA；报表仅使用 Python 3.8+ 标准库。
 
-本工具以独立目录收录。Shell、Python、SQL 和离线测试沿用 v2.0 附件原文；公开配置已替换为通用示例，来源与改动见 `source-manifest.json`。
+## 连接与采集范围
 
-## 快速开始
+- 逐库、逐模块串行执行，共 7 个模块。每个模块独立尝试候选本地 SID，失败后继续后续模块。
+- 首先检查 `DB_NAME`，可选检查 `DB_UNIQUE_NAME`，然后切换并确认目标 PDB；UNDO 从 root 采集。
+- PDB 为空时，CDB 仅检查 root，non-CDB 检查该数据库；不会自动遍历全部 PDB。
+- SID 不代表远程连接，不会 SSH 到其他 RAC 节点；`GV$` 仅读取当前连接可见实例。
+- `TWO_TASK`、`LOCAL` 仅在采集子进程中清除；CSV 固定 UTF-8 环境，派生 CSV 使用 UTF-8 BOM。
+- 查询字典和动态视图，执行会话级设置；不执行业务表扫描、统计收集、账号修改、SHRINK、MOVE、REBUILD 或 Advisor 任务。
 
-1. 在 Oracle 数据库主机上解压，使用能够执行 `/ as sysdba` 的操作系统账号。
-2. 检查 `db_list.conf`。仓库仅包含通用示例，必须替换为真实数据库和当前主机可用的 SID/PDB 映射；建议将实际清单保存为已忽略的 `db_list.local.conf`，并用 `--db-list` 指定。
-3. 填写 `functional_accounts.csv`。默认只有表头；不填时账号明细仍会采集，但功能账号结论显示 `REVIEW`。
-4. 在解压目录执行：
+## 表空间与 UNDO
 
-```bash
-bash check_resources.sh
-```
+- 普通表空间：当前容量、当前已用/空闲、数据文件配置扩展上限、两种使用率。
+- 默认按 **当前容量**、严格 **`>90%`** 告警。
+- `--basis MAX` 改为按配置最大容量判断；两种使用率仍同时输出。
+- `configured_max_gb` 是数据文件配置上限，**没有检查 ASM/文件系统实际剩余容量**。
+- TEMP 用 `DBA_TEMP_FREE_SPACE` 中包含可复用空间的口径。若容量汇总与 tempfile 总容量不匹配，标 `REVIEW`，不猜测百分比。实例本地 TEMP 的复杂布局需在首轮运行中核对。
+- 非 ONLINE 表空间列为待复核，不把缺失空闲信息当成正常。
+- UNDO 容量保留在 `tablespace.csv`；使用情况单独查看 `undo.csv`。
 
-每次在 `output/` 下新建独立 `run_时间戳_随机后缀/`，不会覆盖其他运行结果。
+UNDO：
 
-先只检查一个数据库时，另建一份仅含该数据库配置行的 `db_list_test.conf`：
+- 从 CDB root 检测 local/shared undo，读取 `GV$UNDOSTAT` 的各实例最近采样桶，结合容器/表空间/数据文件容量。
+- 展示 ACTIVE、UNEXPIRED、EXPIRED 容量，ACTIVE+UNEXPIRED 的占比，以及采样桶中的 `SSOLDERRCNT`、`NOSPACEERRCNT`、`UNXPSTEALCNT`。
+- 这不是对其他实例执行 `DBA_UNDO_EXTENTS` 状态估算，也不是逐行实时测量。
+- 最近桶有上述错误/争用事件标 `ALERT`；保留空间比例超阈值标 `REVIEW`，不把 UNEXPIRED 当成永久不可复用空间。
+- 超过 30 分钟的采样、缺少映射/容量或未知模式标 `REVIEW`。PDB 在某实例未打开时标 `PDB_NOT_OPEN`。
+- shared undo 检查的是 CDB 共用资源，可能在多个 PDB 月报中重复展示，**不能把这些重复结果相加**。
+- 当前脚本只读取最近采样桶，不宣称覆盖整月或全部近四天；不同 RU、容器可见性或表空间切换可能需要现场核对映射。
 
-```bash
-bash check_resources.sh --db-list db_list_test.conf
-```
+## 统计信息：计数和待复核明细
 
-每个 run 目录中优先查看：
+范围为 `ORACLE_MAINTAINED='N'` 的用户，保留表/索引及分区、子分区统计记录。
 
-| 文件 | 用途 |
-|---|---|
-| `monthly_summary.csv` | 每库四项维护结论、执行状态、待复核数量及证据路径 |
-| `monthly_summary.md` | 简短月报概览，可在 Obsidian 中打开 |
-| `execution_status.csv` | 每库、每模块、每个候选 SID 的成功/失败记录 |
-| `statistics_summary.csv` | 按 Schema、对象类型、分析月份和检查状态汇总 |
-| `table_waste_candidates.csv` | 超过两个阈值的表空间浪费估算候选项 |
-| `table_space_changes.csv` | 本次与指定历史基线的表空间估算变化 |
-| `index_space_changes.csv` | 索引段大小、层级、叶块数、统计行数的变化 |
-| `account_review.csv` | 全部已采集账号及功能账号检查结论 |
-| `report_errors.csv` | CSV 格式、字段、数字解析等报表错误；没有错误时只有表头 |
-| `数据库名/*.csv` | 对应数据库的原始检查明细 |
-| `数据库名/logs/*.log` | 各次连接尝试/模块执行的错误信息 |
+- 缺失：`LAST_ANALYZED` 为空。
+- 过期：`STALE_STATS='YES'`；不能仅凭分析日期旧就判为过期。
+- 锁定：`STATTYPE_LOCKED` 非空，需要结合应用策略复核。
+- 未知：`STALE_STATS` 既不是 YES 也不是 NO，保留复核提示。
+- 特殊表/索引继续列为待复核；索引状态无法匹配时保留未知状态提示。
+- 普通索引及其分区/子分区为 `UNUSABLE` 时，保留到 `statistics_review.csv`，不执行重建。
 
-主脚本退出码：`0` 执行完成，`1` 有采集或报表失败，`2` 参数或依赖错误。
-`0` **不代表没有发现异常**：例如使用率告警、统计信息待复核，会显示在月报中。
+SQL 中先分类，再按 Schema、对象类型把正常记录压缩成 `SUMMARY` 数量；待复核对象为 `DETAIL`，保留对象、分区身份、统计作用域 SCOPE 和状态。正常对象名、正常对象最后分析时间及全量按月分布不再输出。报告端还会校验记录类型、正整数数量、重复记录和对象身份，异常数据按模块失败处理。
 
-## 环境与连接方式
+`statistics_summary.csv` 的 `checked_count` 是正常计数加待复核记录数；`review_count` 是待复核记录数。缺失、过期、锁定、未知、不可用计数可能重叠，不能相加当作唯一异常数。`unknown_count` 表示过期状态未知，不等于所有特殊对象数量；完整待复核范围以 `review_count` 和明细为准。
 
-- 目标版本为 Oracle Database **19c**；数据库主机需要 Bash **4+**、`oraenv`、SQL*Plus **12.2+**（建议 19c 客户端）。
-- 自动生成报表需要 Python **3.8+**，只使用标准库，无需 pip 包。
-- 连接方式沿用原脚本的本机 OS 认证 `/ as sysdba`。`oraenv` 必须能通过 PATH 找到。
-- SID 列表是**当前主机可尝试的本地实例**。不会 SSH 到另一个 RAC 节点，也不会把远端 SID 自动变成远程连接。
-- 每个模块分别尝试候选 SID；一个模块失败不会阻止其他模块。`GV$` 用于读取可见 RAC 实例数据。
-- `TWO_TASK`、`LOCAL` 只在采集子进程中清除，避免环境变量将连接重定向到远端；父进程环境不改动。
-- CSV 采集子进程固定 `NLS_LANG=AMERICAN_AMERICA.AL32UTF8`；报表 CSV 使用 UTF-8 BOM，方便 Excel 打开。
-- 未进行 listener/端口测试，也不验证应用使用其密码能否登录。Host/Port 不参与本机 SYSDBA 连接。
-- 脚本仅查询字典/动态视图，执行会话级容器、数字格式和时区设置。不会执行统计信息收集、账号修改、SHRINK、MOVE、REBUILD 或 Advisor 分析任务。
+分区表父级、分区及不同统计作用域分别计为统计记录，不等于唯一逻辑表数；没有任何统计记录时提示 `REVIEW`，不会凭空判定正常。
 
-如果数据库主机没有 Python，可以只采集：
+## 空间浪费候选检查
 
-```bash
-bash check_resources.sh --collect-only
-```
+不再比较历史 run，不再采集索引段大小和结构指标。空间项只表示本次快照中的候选和估算覆盖。
 
-然后将**整个 run 目录**和 `report.py` 复制到装有 Python 3.8+ 的 Mac/其他主机，执行：
+### 表估算
 
-```bash
-python3 report.py /path/to/collected_run_directory
-```
+1. 按顶层表检查可支持范围，仅对普通非分区、非压缩堆表估算。
+2. 要求统计分析时间存在、`STALE_STATS='NO'`，且行数、平均行长、块大小和 PCTFREE 等输入可用。
+3. 使用 `NUM_ROWS × AVG_ROW_LEN`、块大小和 PCTFREE 估算块需求，再与表段分配量比较。
+4. 默认同时满足估算浪费 **>100 MB 且 >30%** 才输出对象明细；阈值在采集时经 Shell 验证后传给 SQL，报表使用本次 run 的阈值再次校验。
 
-Mac 自带 Bash 可能是 3.2；本机生成报表只需要 Python，不需要运行采集 shell。
+锁定统计信息不必然等于估算不可靠；如果分析时间、过期状态及输入满足条件，仍可进入估算，但统计模块会保留锁定提示。
 
-## 数据库配置
+### 覆盖与结果
 
-```text
-# database_label|local_sid1/local_sid2|expected_db_name|pdb|optional_expected_db_unique_name
-APP_PDB|ORCL1/ORCL2|ORCL|APPPDB|ORCL_PRIMARY
-```
+- `table_waste_candidates.csv` 只含可靠堆表候选；分区、压缩、IOT、临时、外部、嵌套等表不做估算。
+- `table_waste_summary.csv` 按 Schema、`method_status` 汇总：`ESTIMATED`、`UNSUPPORTED_PARTITIONED`、`UNSUPPORTED_TABLE_TYPE`、`UNSUPPORTED_COMPRESSED`、`NO_TABLE_SEGMENT`、`UNRELIABLE_STATS`、`MISSING_INPUT_STATS`。
+- 每张顶层表归入一个主要原因；表有多个限制时，只计入首先命中的原因。正常非候选及跳过对象不保留全量对象名，保留数量；统计信息不可靠的对象可在统计复核明细中查找。
+- `checked_count` 为已估算表数；`issue_count` 为候选数。存在候选、跳过表或没有可估算表时为 `REVIEW`。只有存在已估算表、无候选且无跳过表时，此项可为 `OK`，含义限于当前规则和范围。
+- 一个 Schema 中已估算数量包含候选；`candidate_count` 是该数量的子集，不能重复相加。
+- 表段不含 LOB、LOBINDEX 或其他索引段；不支持的表即使有段也不估算。
 
-- 前四列为必填结构；第五列可选，填写真实 `DB_UNIQUE_NAME` 后会额外校验，建议用于区分同名生产/备库。
-- 第三列核对的是 `V$DATABASE.NAME`，即 `DB_NAME`，并非 PDB 名或服务名。
-- PDB 为空：CDB 只检查 root；non-CDB 检查该数据库。**不会自动遍历全部 PDB**。
-- PDB 非空：先核对数据库身份，再检查/切换指定 PDB。容器切换失败不会继续当成成功结果。
-- 数据库标签用于目录名，需要唯一，仅支持字母/数字/下划线开头和后续字母/数字/点/短横线。
-- SID、DB_NAME、DB_UNIQUE_NAME、PDB 只支持普通未加双引号的 Oracle 标识符，不接受空格、SQL 片段或带引号标识符。
-- 分隔符两边不要加空格；支持 CRLF，`#` 开头整行注释。
+这是依赖字典统计的粗略估算，未精确建模全部行/块开销；不等于实际可回收容量或已确认碎片率，也不会自动推荐维护。需要深入检查时，对少量重点对象人工选择适合的空间工具。
 
-## 功能账号清单
+## 功能账号
 
 正式文件 `functional_accounts.csv` 故意留空，避免猜测哪些是功能账号。请根据真实账号填写；示例见 `functional_accounts.example.csv`，示例占位名称不能直接当实际账号使用。
 
@@ -105,120 +94,28 @@ APP_PDB|ORCL1/ORCL2|ORCL|APPPDB|ORCL_PRIMARY
 - 最近登录时间仅供参考，不自动据此判定账号“不活跃”。SYSDBA 等管理连接不会填充该字段。
 - 如需加入系统维护账号，本版需另行调整账号采集范围；清单包含但被过滤的账号会显示未找到。
 
-## 四项检查的判断口径
-
-### 1. 表空间
-
-- 普通表空间：当前容量、当前已用/空闲、数据文件配置扩展上限、两种使用率。
-- 默认按 **当前容量**、严格 **`>90%`** 告警。
-- `--basis MAX` 改为按配置最大容量判断；两种使用率仍同时输出。
-- `configured_max_gb` 是数据文件配置上限，**没有检查 ASM/文件系统实际剩余容量**。
-- TEMP 用 `DBA_TEMP_FREE_SPACE` 中包含可复用空间的口径。若容量汇总与 tempfile 总容量不匹配，标 `REVIEW`，不猜测百分比。实例本地 TEMP 的复杂布局需在首轮运行中核对。
-- 非 ONLINE 表空间列为待复核，不把缺失空闲信息当成正常。
-- UNDO 容量保留在 `tablespace.csv`；使用情况单独查看 `undo.csv`。
-
-UNDO：
-
-- 从 CDB root 检测 local/shared undo，读取 `GV$UNDOSTAT` 的各实例最近采样桶，结合容器/表空间/数据文件容量。
-- 展示 ACTIVE、UNEXPIRED、EXPIRED 容量，ACTIVE+UNEXPIRED 的占比，以及采样桶中的 `SSOLDERRCNT`、`NOSPACEERRCNT`、`UNXPSTEALCNT`。
-- 这不是对其他实例执行 `DBA_UNDO_EXTENTS` 状态估算，也不是逐行实时测量。
-- 最近桶有上述错误/争用事件标 `ALERT`；保留空间比例超阈值标 `REVIEW`，不把 UNEXPIRED 当成永久不可复用空间。
-- 超过 30 分钟的采样、缺少映射/容量或未知模式标 `REVIEW`。PDB 在某实例未打开时标 `PDB_NOT_OPEN`。
-- shared undo 检查的是 CDB 共用资源，可能在多个 PDB 月报中重复展示，**不能把这些重复结果相加**。
-- 当前脚本只读取最近采样桶，不宣称覆盖整月或全部近四天；不同 RU、容器可见性或表空间切换可能需要现场核对映射。
-
-### 2. 表/索引统计信息
-
-- 明细包括表、索引、分区/子分区对象的最后分析时间、`STALE_STATS`、统计锁定状态。
-- 缺失、过期、未知、特殊对象、锁定统计信息列为待复核；不会只因为日期较旧就判定过期。
-- 特殊索引、临时/外部表等可能有不同的合理统计策略，结果应结合应用策略处理。
-- 同一分区表可能有父级和分区多条统计记录；`checked_count` 是统计记录数，不是唯一逻辑表数量。
-- 本版不自动收集统计信息，也没有预设应用对象豁免规则。
-
-### 3. 表/索引空间变化与碎片复核
-
-- `table_waste.csv` 保留**所有非系统维护用户下的顶层表清单**，而非仅保留超阈值表。
-- 只对可支持的普通非分区、非压缩堆表做基于 `NUM_ROWS × AVG_ROW_LEN`、块大小、PCTFREE 的粗略估算。
-- 分区表、压缩表、IOT、外部/临时/嵌套表等保留清单和 `method_status`，不生成不可靠估算。
-- 表段容量可以汇总表分区段，但不含 LOB、LOBINDEX 或其他索引段；分区表不会因此被当成已支持估算。
-- 候选默认同时满足估算浪费 **>100 MB 且 >30%**；`STALE_STATS` 非 NO 时先复核统计信息。
-- 对行/块开销、数据分布等只做简化处理。估算浪费 **不等于实际可回收容量，也不等于已经确认的碎片率**。
-- 索引段明细涵盖普通索引段及其分区/子分区，输出段大小、BLEVEL、LEAF_BLOCKS、CLUSTERING_FACTOR 等结构指标。没有分配段的索引仍可出现在统计信息明细中。
-- **索引结构指标不是碎片率；本版不通过某个 BLEVEL、CLUSTERING_FACTOR 或大小增长就推荐 REBUILD。**
-- 对重点对象可后续人工使用适合其段类型的 `DBMS_SPACE`/已有 Segment Advisor 结果复核。本版不自动运行这些额外检查。
-- 碎片项首次为 `NO_BASELINE`；提供基线后仍为 `REVIEW`，并列明估算变化和覆盖缺口，不输出未经证实的“没有碎片增加”。
-
-### 4. 功能账号有效性
-
-依据显式清单、状态、到期信息与认证类型检查。范围和状态含义见上文账号清单章节。
-
-## 基线比较
-
-第一次执行先保存完整 run 目录。后续指定一个**真实存在的、更早的 v2 run 目录**：
-
-```bash
-bash check_resources.sh --baseline /path/to/previous_run_directory
-```
-
-也可以仅重新生成已有采集结果的报表：
-
-```bash
-python3 report.py /path/to/current_run_directory --baseline /path/to/previous_run_directory
-```
-
-- 不会自动选择、覆盖或推进基线；v1 报表缺少必要身份/对象信息，不直接作为 v2 基线。
-- DBID、DB_UNIQUE_NAME、容器名和容器 DBID 必须一致，避免跨库或 PDB 重建后错误比较。
-- 对象 ID、DATA_OBJECT_ID 或 LAST_DDL_TIME 改变时标为对象变更待复核，不直接计算成碎片变化。
-- 表估算比较还要求两次均为支持的估算对象，且统计信息均为 `STALE_STATS=NO`。
-- 新增/新纳入范围、移除/移出范围、缺失基线、基线采集失败分别标识；不把对象未出现直接推断为 DROP。
-- 索引变化只说明结构/分配变化；业务增长、统计信息更新、对象维护都可能影响结果。
-- 默认没有“增长达到多少才重要”的公司标准；任一正的表浪费估算变化列为待复核，实际变化量同时输出。
-- 重新运行 `report.py` 会重写该 run 中的派生报表，保留采集 CSV、设置、原基线和日志。不要同时对同一 run 生成两份报表。
-
-## 可选参数
-
-```bash
-bash check_resources.sh --help
-```
-
-例如：
-
-```bash
-bash check_resources.sh --threshold 90 --basis CURRENT --waste-mb 100 --waste-pct 30 --expiry-days 30
-```
-
-支持 `--db-list`、`--accounts`、`--output`、`--baseline`。数据文件/SQL 路径含空格时请在命令中正确加引号。
-
-## 月报填写建议
-
-脚本不直接填写月报中的 Yes/No，因为那可能分别代表“已检查”或“发现异常”。
+## 状态与失败处理
 
 | result | 含义 |
-|---|---|
-| `OK` | 在本次采集、明确范围和规则下未发现待处理项，不表示整月持续正常 |
-| `ALERT` | 观察到使用率越线或 UNDO 事件，需关注 |
-| `REVIEW` | 有待复核项、未配置业务范围、特殊对象或测量覆盖不足 |
-| `NO_BASELINE` | 没有比较基线，不能判断是否增加 |
-| `FAILED` | 采集/数据解析失败，不能当作“未发现异常” |
+| --- | --- |
+| `OK` | 本次规则与范围内未发现待复核项 |
+| `ALERT` | 表空间越线或最近 UNDO 桶观察到错误/争用事件 |
+| `REVIEW` | 有待复核项、缺少业务范围或估算覆盖不足 |
+| `FAILED` | 采集/CSV 校验失败，不能视为没有异常 |
 
-`issue_count` 是已识别的检查项/对象记录数量，不是全量风险计数；尤其碎片项的覆盖缺口应同时阅读 remarks。
+退出码 `0` 只说明执行完成，不代表没有告警；`1` 为采集/报表失败，`2` 为参数/依赖错误。失败模块会影响相应月报项目，不会伪装成正常。
 
-每月只执行一次得到的是一次快照。若月报实际要求“整月是否曾超过 90%”，必须另有周期采样和月内峰值汇总；本版不创建定时任务，也不借助 AWR/ASH 进行历史推断。
+## 输出与版本
 
-## 验证状态
+`monthly_summary.csv` / `.md` 保留每库四项：`TABLESPACE`、`TABLE_AND_INDEX_STATISTICS`、`SPACE_WASTE_CANDIDATES`、`FUNCTIONAL_ACCOUNT_VALIDITY`。其中索引不可用状态归入统计复核。
 
-开发环境通过了 Bash 语法检查、Python 编译检查和 18 项离线测试。离线测试覆盖 SP2 零退出码错误、静默非零退出码、逐模块 SID 重试、模块失败后继续、无基线、数据库/对象身份变化、统计信息可靠性、账号预期状态及 CSV 转义等。
+v2.1 采集 CSV 是压缩格式，仅配套 v2.1 报表；不接受旧 v2.0 run 和 `--baseline`，不生成表/索引变化报表。旧 run 请使用 Git 历史中的配套 v2.0 报表。重新执行报表只覆盖该 run 的派生报表，不会修改数据库。
 
-**发布验证没有连接实际 Oracle，尚未在目标数据库/RU/SQL*Plus 客户端上编译执行这些 SQL。** 请先用一库配置运行，确认 `execution_status.csv`、原始明细和月报口径，再扩展到全部清单。
+## 资源与验证边界
 
-离线测试可再次执行，不连接数据库：
+SQL 内先压缩正常对象，减少传输、CSV 和 Python 内存需求；跳过独立索引结构查询及历史比较。字典查询仍需读取、关联和分组，异常很多时明细也可能很大，没有固定耗时和资源比例保证。当前没有查询超时和资源限额，首次仍应低峰期单库试跑。
 
-```bash
-python3 -m unittest discover -s tests -v
-bash -n check_resources.sh
-```
-
-`original_sha256.json` 是附件内沿用的六个更早文件的历史哈希记录；这些更早文件未随包提供，本次未验证。当前 ZIP 来源与逐文件核对见 `source-manifest.json`；公开目录校验使用 `SHA256SUMS`。
+一次快照不能代表整月峰值；脚本不创建定时任务，不借助 AWR/ASH 推断历史。SQL 尚未在实际 Oracle 19c/RU/SQL*Plus 环境验证。离线流程、真实 SQL 文本的模拟字典测试和限制见 [VALIDATION.md](VALIDATION.md)。
 
 ## Oracle 官方参考
 

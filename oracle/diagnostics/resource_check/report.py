@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
-"""Oracle resource check v2 reports. Python 3.8+, standard library only.
+"""Oracle resource check v2.1 compact reports. Python 3.8+, standard library only.
 
-Reads collected CSVs, never connects to Oracle. Baselines are explicit and never
-advanced automatically. All conclusions describe collection-time observations.
+Reads compact collected CSVs, never connects to Oracle. Healthy statistics are
+counts; only review items and table waste candidates retain object detail.
 """
 import argparse
 import csv
 import sys
-from collections import Counter
+from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 MODULES = ('metadata', 'tablespace', 'undo', 'table_stats', 'index_stats',
-           'table_waste', 'index_space', 'user_accounts')
+           'table_waste', 'user_accounts')
 REQUIRED = {
     'metadata': {'dbid', 'db_unique_name', 'container_name', 'container_dbid', 'database_role'},
     'tablespace': {'tablespace_name', 'tablespace_type', 'review_status'},
     'undo': {'inst_id', 'review_status', 'undo_scope'},
-    'table_stats': {'owner', 'table_name', 'review_status', 'last_analyzed', 'stale_stats'},
-    'index_stats': {'owner', 'index_name', 'review_status', 'last_analyzed', 'stale_stats'},
-    'table_waste': {'owner', 'table_name', 'method_status', 'segment_mb', 'estimated_waste_mb',
-                    'estimated_unused_pct', 'stale_stats', 'object_id', 'data_object_id', 'last_ddl_time'},
-    'index_space': {'owner', 'index_name', 'partition_name', 'segment_type', 'segment_mb',
-                    'stale_stats', 'object_id', 'data_object_id', 'last_ddl_time', 'index_status'},
+    'table_stats': {'owner','object_type','record_type','object_count','table_name',
+                    'partition_name','subpartition_name','review_status','last_analyzed','stale_stats','stattype_locked','scope'},
+    'index_stats': {'owner','object_type','record_type','object_count','index_name',
+                    'partition_name','subpartition_name','review_status','last_analyzed','stale_stats','stattype_locked','scope','index_status'},
+    'table_waste': {'owner','record_type','object_count','table_name','method_status',
+                    'segment_mb','estimated_waste_mb','estimated_unused_pct','last_analyzed','stale_stats'},
     'user_accounts': {'username', 'account_status', 'expiry_days_remaining', 'authentication_type'},
 }
 
@@ -65,15 +65,11 @@ def number(value):
     return result
 
 
-def fmt(value):
-    return '' if value is None else str(value)
-
-
 def settings(run):
     with (run / 'run_settings.csv').open(encoding='utf-8-sig', newline='') as handle:
         data = dict(csv.reader(handle))
-    if data.get('version') != '2.0':
-        raise ValueError('Only v2.0 run directories are supported')
+    if data.get('version') != '2.1':
+        raise ValueError('Only v2.1 compact run directories are supported; use the v2.0 report for old runs')
     datetime.strptime(data['collected_at_utc'], '%Y-%m-%dT%H:%M:%SZ')
     for key in ('threshold', 'waste_mb', 'waste_pct', 'expiry_days'):
         value = number(data[key])
@@ -107,7 +103,6 @@ class Run:
                     # Normalize numeric errors into a module failure, not a misleading OK.
                     numeric_fields = {
                         'table_waste': ('segment_mb','estimated_waste_mb','estimated_unused_pct'),
-                        'index_space': ('segment_mb','blevel','leaf_blocks','num_rows'),
                         'user_accounts': ('expiry_days_remaining',),
                     }.get(module, ())
                     for row in data:
@@ -115,6 +110,8 @@ class Run:
                             raise ValueError('Database label mismatch')
                         for field in numeric_fields:
                             number(row.get(field))
+                    if module in ('table_stats','index_stats','table_waste'):
+                        validate_compact(module, data, self.settings)
                     self.data[db, module] = data
                 except (ValueError, OSError, UnicodeError, csv.Error) as exc:
                     self.data[db, module] = None
@@ -124,107 +121,83 @@ class Run:
         return self.data.get((db, module))
 
 
-def same_database(current, baseline, db):
-    a, b = current.get(db, 'metadata'), baseline.get(db, 'metadata')
-    if not a or not b:
-        return False
-    # Stable identity excludes the RAC instance and host, which may legitimately change.
-    fields = ('dbid', 'db_unique_name', 'container_name', 'container_dbid')
-    return all(a[0].get(k) and a[0][k] == b[0].get(k) for k in fields)
-
-
-def key_for(module, row):
-    if module == 'table_waste':
-        return row['owner'], row['table_name']
-    return row['owner'], row['index_name'], row['segment_type'], row['partition_name']
-
-
-def unique_map(module, data):
-    result = {}
+def validate_compact(module, data, run_settings):
+    """Reject inconsistent compact records rather than silently losing coverage."""
+    seen = set()
     for row in data:
-        key = key_for(module, row)
-        if key in result:
-            raise ValueError('Duplicate object key in {}: {}'.format(module, key))
-        result[key] = row
-    return result
-
-
-def object_changed(a, b):
-    return any(not a.get(k) or not b.get(k) or a[k] != b[k]
-               for k in ('object_id', 'data_object_id', 'last_ddl_time'))
-
-
-def trends(current, baseline, db, module):
-    data = current.get(db, module)
-    if data is None:
-        return []
-    identity_ok = baseline is not None and same_database(current, baseline, db)
-    previous = baseline.get(db, module) if identity_ok else None
-    old = unique_map(module, previous or [])
-    now = unique_map(module, data)
-    output = []
-    for key, row in now.items():
-        prior = old.get(key)
-        result = {
-            'database': db, 'owner': row['owner'],
-            'current_collected_at_utc':current.settings['collected_at_utc'],
-            'baseline_collected_at_utc':baseline.settings['collected_at_utc'] if baseline else '',
-            'object_name': row.get('table_name') if module == 'table_waste' else row['index_name'],
-            'segment_type': 'TABLE' if module == 'table_waste' else row['segment_type'],
-            'partition_name': row.get('partition_name',''),
-            'current_segment_mb': row.get('segment_mb',''),
-            'previous_segment_mb': prior.get('segment_mb','') if prior else '',
-        }
-        if baseline is None:
-            state = 'NO_BASELINE'
-        elif not identity_ok:
-            state = 'DATABASE_IDENTITY_UNVERIFIED_OR_CHANGED'
-        elif previous is None:
-            state = 'BASELINE_COLLECTION_FAILED'
-        elif prior is None:
-            state = 'NEW_OR_NEWLY_IN_SCOPE'
-        elif module == 'table_waste' and (row['method_status'] != 'ESTIMATED' or prior['method_status'] != 'ESTIMATED'):
-            state = 'NOT_ESTIMATED'
-        elif object_changed(row, prior):
-            state = 'OBJECT_CHANGED_REVIEW'
-        elif row['stale_stats'] != 'NO' or prior['stale_stats'] != 'NO':
-            state = 'UNRELIABLE_STATS'
-        elif module=='index_space' and any(number(source.get(field)) is None
-                for source in (row,prior) for field in ('blevel','leaf_blocks','num_rows')):
-            state = 'MISSING_STRUCTURE_STATS'
+        count = number(row['object_count'])
+        if count is None or count < 1 or count != count.to_integral_value():
+            raise ValueError('object_count must be a positive integer')
+        kind = row['record_type']
+        if kind not in ('SUMMARY', 'DETAIL') or (kind == 'DETAIL' and count != 1):
+            raise ValueError('Invalid compact record type/count')
+        if not row['owner']:
+            raise ValueError('Missing schema')
+        name = row.get('index_name', row.get('table_name', ''))
+        if (kind == 'SUMMARY' and name) or (kind == 'DETAIL' and not name):
+            raise ValueError('Object identity does not match compact record type')
+        if module == 'table_waste':
+            method = row['method_status']
+            if method not in ('ESTIMATED','UNSUPPORTED_PARTITIONED','UNSUPPORTED_TABLE_TYPE',
+                              'UNSUPPORTED_COMPRESSED','NO_TABLE_SEGMENT','UNRELIABLE_STATS','MISSING_INPUT_STATS'):
+                raise ValueError('Unknown space estimate coverage status')
+            key = row['owner'], method, kind, name
+            if kind == 'DETAIL':
+                waste, pct, size = (number(row[f]) for f in
+                                    ('estimated_waste_mb','estimated_unused_pct','segment_mb'))
+                if (method != 'ESTIMATED' or row['stale_stats'] != 'NO' or not row['last_analyzed']
+                        or waste is None or pct is None or size is None or size <= 0
+                        or waste > size or pct > 100
+                        or waste <= number(run_settings['waste_mb']) or pct <= number(run_settings['waste_pct'])):
+                    raise ValueError('Unreliable or below-threshold table waste candidate')
         else:
-            a, b = number(row.get('segment_mb')), number(prior.get('segment_mb'))
-            result['delta_segment_mb'] = fmt(a-b) if a is not None and b is not None else ''
-            if module == 'table_waste':
-                fields = ('estimated_waste_mb','estimated_unused_pct')
-                values = [number(source.get(f)) for f in fields for source in (row, prior)]
-                if any(v is None for v in values):
-                    state = 'MISSING_ESTIMATE'
-                else:
-                    waste_delta, pct_delta = values[0]-values[1], values[2]-values[3]
-                    result.update(delta_estimated_waste_mb=fmt(waste_delta), delta_unused_pct_points=fmt(pct_delta))
-                    state = 'ESTIMATE_INCREASED_REVIEW' if waste_delta>0 or pct_delta>0 else 'NO_ESTIMATED_INCREASE'
-            else:
-                changed = False
-                for field in ('blevel','leaf_blocks','num_rows'):
-                    a,b=number(row.get(field)),number(prior.get(field))
-                    result['delta_'+field]=fmt(a-b) if a is not None and b is not None else ''
-                    changed = changed or (a is not None and b is not None and a != b)
-                delta_size=number(result['delta_segment_mb'])
-                state = 'STRUCTURE_OR_SIZE_CHANGED_REVIEW' if changed or (delta_size is not None and delta_size!=0) else 'NO_STRUCTURAL_CHANGE_OBSERVED'
-        result['comparison_status'] = state
-        output.append(result)
-    for key, row in old.items():
-        if key not in now:
-            output.append({'database': db, 'owner': row['owner'],
-                           'current_collected_at_utc':current.settings['collected_at_utc'],
-                           'baseline_collected_at_utc':baseline.settings['collected_at_utc'],
-                           'object_name': row['table_name'] if module=='table_waste' else row['index_name'],
-                           'segment_type': 'TABLE' if module=='table_waste' else row['segment_type'],
-                           'partition_name': row.get('partition_name',''),
-                           'previous_segment_mb':row.get('segment_mb',''),
-                           'comparison_status':'REMOVED_OR_OUT_OF_SCOPE'})
-    return output
+            if not row['object_type'] or not row['review_status']:
+                raise ValueError('Missing statistics object type/status')
+            key = row['owner'], row['object_type'], kind, name, row['partition_name'], row['subpartition_name'], row['scope']
+            if kind == 'SUMMARY' and (row['review_status'] != 'OK' or row['stattype_locked']):
+                raise ValueError('Unhealthy statistics cannot be hidden in a summary')
+            if kind == 'DETAIL' and row['review_status'] == 'OK' and not row['stattype_locked']:
+                raise ValueError('Healthy statistics must be aggregated')
+        if key in seen:
+            raise ValueError('Duplicate compact record')
+        seen.add(key)
+
+
+def statistics_report(current, db):
+    summaries = []
+    details = []
+    for module in ('table_stats', 'index_stats'):
+        counts = defaultdict(lambda: dict(checked_count=0,review_count=0,missing_count=0,
+                    stale_count=0,locked_count=0,unknown_count=0,unusable_count=0))
+        for row in current.get(db, module) or []:
+            item = counts[row['owner'], row['object_type']]
+            item['checked_count'] += int(number(row['object_count']))
+            if row['record_type'] == 'DETAIL':
+                item['review_count'] += 1
+                item['missing_count'] += not bool(row['last_analyzed'])
+                item['stale_count'] += row['stale_stats'] == 'YES'
+                item['locked_count'] += bool(row['stattype_locked'])
+                item['unknown_count'] += row['stale_stats'] not in ('YES','NO')
+                item['unusable_count'] += row.get('index_status') == 'UNUSABLE'
+                details.append(dict(row, database=db, module=module,
+                         object_name=row.get('index_name',row.get('table_name',''))))
+        for (owner,kind),values in sorted(counts.items()):
+            summaries.append(dict(database=db,module=module,owner=owner,object_type=kind,**values))
+    return summaries, details
+
+
+def space_report(current, db):
+    counts = defaultdict(lambda: dict(object_count=0,candidate_count=0))
+    candidates = []
+    for row in current.get(db,'table_waste') or []:
+        item = counts[row['owner'],row['method_status']]
+        item['object_count'] += int(number(row['object_count']))
+        if row['record_type'] == 'DETAIL':
+            item['candidate_count'] += 1
+            candidates.append(dict(row,database=db,review_status='CANDIDATE_REVIEW'))
+    summary = [dict(database=db,owner=owner,method_status=method,**values)
+               for (owner,method),values in sorted(counts.items())]
+    return summary,candidates
 
 
 def account_rules(path, databases):
@@ -290,12 +263,12 @@ def account_report(current, db, rules):
     return output
 
 
-def summarize(current, baseline, db, accounts, table_trend, index_trend):
+def summarize(current, db, accounts):
     result = []
     groups = (
         ('TABLESPACE', ('metadata','tablespace','undo')),
         ('TABLE_AND_INDEX_STATISTICS', ('metadata','table_stats','index_stats')),
-        ('TABLE_AND_INDEX_FRAGMENTATION', ('metadata','table_waste','index_space')),
+        ('SPACE_WASTE_CANDIDATES', ('metadata','table_waste')),
         ('FUNCTIONAL_ACCOUNT_VALIDITY', ('metadata','user_accounts')),
     )
     for category, modules in groups:
@@ -316,23 +289,18 @@ def summarize(current, baseline, db, accounts, table_trend, index_trend):
                         remarks='Strict > {}%, basis={}; UNDO retained space is reviewed separately; latest UNDO bucket only; configured maximum excludes storage availability; snapshot, not monthly peak.'.format(current.settings['threshold'], current.settings['basis']))
         elif category == 'TABLE_AND_INDEX_STATISTICS':
             data=current.get(db,'table_stats')+current.get(db,'index_stats')
-            counts=Counter(r['review_status'] for r in data)
-            issues=sum(r['review_status']!='OK' or bool(r.get('stattype_locked')) for r in data)
-            item.update(checked_count=len(data),issue_count=issues,result='REVIEW' if issues or not data else 'OK',
-                        remarks='Table/index and partition statistics; '+', '.join('{}={}'.format(k,v) for k,v in sorted(counts.items()))+'; old dates alone are not stale; locked stats require policy review.')
-            if any(r.get('stattype_locked') for r in data):
-                item['result']='REVIEW'
-            if not data:
-                item['remarks']+=' No eligible statistics records found; confirm application scope.'
-        elif category == 'TABLE_AND_INDEX_FRAGMENTATION':
-            table=current.get(db,'table_waste'); indexes=current.get(db,'index_space')
-            comparable=sum(r['comparison_status'] in ('ESTIMATE_INCREASED_REVIEW','NO_ESTIMATED_INCREASE') for r in table_trend)
-            increase=sum(r['comparison_status']=='ESTIMATE_INCREASED_REVIEW' for r in table_trend)
-            unsupported=sum(r['method_status']!='ESTIMATED' for r in table)
-            invalid=sum(r['index_status']=='UNUSABLE' for r in indexes)
-            item.update(checked_count=len(table)+len(indexes),issue_count=increase+invalid,
-                        result='NO_BASELINE' if baseline is None else 'REVIEW',
-                        remarks='Estimated table waste only; comparable tables={}, increased estimates={}, unsupported tables={}, unusable index segments={}. Index metrics are structural trends, not measured fragmentation. No automatic Yes/No or rebuild recommendation.'.format(comparable,increase,unsupported,invalid))
+            checked=sum(int(number(r['object_count'])) for r in data)
+            issues=sum(r['record_type']=='DETAIL' for r in data)
+            item.update(checked_count=checked,issue_count=issues,result='REVIEW' if issues or not checked else 'OK',
+                        remarks='Schema/type counts plus review items only; partitions count separately. Missing/stale/locked/unknown counts may overlap. UNUSABLE indexes are included. Old dates alone are not stale.')
+        elif category == 'SPACE_WASTE_CANDIDATES':
+            data=current.get(db,'table_waste')
+            estimated=sum(int(number(r['object_count'])) for r in data if r['method_status']=='ESTIMATED')
+            skipped=sum(int(number(r['object_count'])) for r in data if r['method_status']!='ESTIMATED')
+            issues=sum(r['record_type']=='DETAIL' for r in data)
+            item.update(checked_count=estimated,issue_count=issues,
+                        result='REVIEW' if issues or skipped or not estimated else 'OK',
+                        remarks='Reliable ordinary heap estimates only; candidates require > {} MB AND > {}%; skipped tables={}. See table_waste_summary.csv. Estimates are not measured fragmentation or reclaimable space. No history or index structure collection.'.format(current.settings['waste_mb'],current.settings['waste_pct'],skipped))
         else:
             scoped=[r for r in accounts if r['functional_account']=='YES']
             issues=sum(not r['review_status'].startswith('OK') for r in scoped)
@@ -340,57 +308,42 @@ def summarize(current, baseline, db, accounts, table_trend, index_trend):
                         result='REVIEW' if not scoped or issues else 'OK',
                         remarks='No functional account list configured for this database.' if not scoped else 'Explicit account list only; unclassified accounts excluded; database account metadata does not prove application login succeeds.')
         meta=current.get(db,'metadata')
-        if meta and meta[0]['database_role']!='PRIMARY' and item['result'] not in ('FAILED','NO_BASELINE'):
+        if meta and meta[0]['database_role']!='PRIMARY' and item['result'] != 'FAILED':
             item['result']='REVIEW'
             item['remarks']+=' Database role is not PRIMARY.'
         result.append(item)
     return result
 
 
-def generate(run_dir, baseline_dir=None):
+def generate(run_dir):
     current=Run(run_dir)
-    baseline=Run(baseline_dir) if baseline_dir else None
-    if baseline:
-        if current.root==baseline.root or baseline.settings['collected_at_utc']>=current.settings['collected_at_utc']:
-            raise ValueError('Baseline must be a distinct earlier v2 run')
     rules,_=account_rules(current.root/'functional_accounts.csv',current.databases)
-    all_accounts=[];table_trends=[];index_trends=[];candidates=[];summary=[];stats_summary=[]
+    all_accounts=[];candidates=[];summary=[];stats_summary=[];stats_details=[];space_summary=[]
     for db in current.databases:
-        tt=trends(current,baseline,db,'table_waste')
-        it=trends(current,baseline,db,'index_space')
         ar=account_report(current,db,rules)
-        table_trends.extend(tt);index_trends.extend(it);all_accounts.extend(ar)
-        summary.extend(summarize(current,baseline,db,ar,tt,it))
-        for row in current.get(db,'table_waste') or []:
-            waste,pct=number(row.get('estimated_waste_mb')),number(row.get('estimated_unused_pct'))
-            if waste is not None and pct is not None and waste>number(current.settings['waste_mb']) and pct>number(current.settings['waste_pct']):
-                copy=dict(row);copy['database']=db
-                copy['review_status']='CANDIDATE_REVIEW' if row['stale_stats']=='NO' else 'REFRESH_STATS_REVIEW_FIRST'
-                candidates.append(copy)
-        for module in ('table_stats','index_stats'):
-            counts=Counter((r['owner'],r.get('object_type',''),r['last_analyzed'][:7] or 'NEVER',r['review_status']) for r in (current.get(db,module) or []))
-            for (owner,kind,month,status),count in sorted(counts.items()):
-                stats_summary.append(dict(database=db,module=module,owner=owner,object_type=kind,last_analyzed_month=month,review_status=status,object_count=count))
+        all_accounts.extend(ar)
+        summary.extend(summarize(current,db,ar))
+        totals,details=statistics_report(current,db)
+        stats_summary.extend(totals);stats_details.extend(details)
+        totals,details=space_report(current,db)
+        space_summary.extend(totals);candidates.extend(details)
     root=current.root
     write_csv(root/'monthly_summary.csv',summary,('database','category','collected_at_utc','execution_status','result','checked_count','issue_count','remarks','evidence'))
     write_csv(root/'table_waste_candidates.csv',candidates,('database','owner','table_name','tablespace_name','segment_mb','estimated_waste_mb','estimated_unused_pct','last_analyzed','stale_stats','review_status'))
-    trend_fields=('database','owner','object_name','segment_type','partition_name','previous_segment_mb','current_segment_mb','delta_segment_mb','delta_estimated_waste_mb','delta_unused_pct_points','comparison_status')
-    trend_times=('current_collected_at_utc','baseline_collected_at_utc')
-    write_csv(root/'table_space_changes.csv',table_trends,trend_times+trend_fields)
-    write_csv(root/'index_space_changes.csv',index_trends,trend_times+trend_fields[:8]+('delta_blevel','delta_leaf_blocks','delta_num_rows','comparison_status'))
+    write_csv(root/'table_waste_summary.csv',space_summary,('database','owner','method_status','object_count','candidate_count'))
     account_fields=('database','username','functional_account','expected_status','account_status','expiry_date','expiry_days_remaining','lock_date','profile','authentication_type','common','proxy_only_connect','last_login_utc','review_status')
     write_csv(root/'account_review.csv',all_accounts,account_fields)
-    write_csv(root/'statistics_summary.csv',stats_summary,('database','module','owner','object_type','last_analyzed_month','review_status','object_count'))
+    write_csv(root/'statistics_summary.csv',stats_summary,('database','module','owner','object_type','checked_count','review_count','missing_count','stale_count','locked_count','unknown_count','unusable_count'))
+    write_csv(root/'statistics_review.csv',stats_details,('database','module','owner','object_type','object_name','partition_name','subpartition_name','last_analyzed','stale_stats','stattype_locked','scope','index_status','review_status'))
     write_csv(root/'report_errors.csv',current.errors,('database','module','error'))
-    lines=['# Oracle monthly resource check','', 'Collected at (UTC): '+current.settings['collected_at_utc'],
-           'Baseline (UTC): '+(baseline.settings['collected_at_utc'] if baseline else 'None — first-run baseline only'),'',
-           'Results describe the collection snapshot, not continuous coverage of the month.', '',
+    lines=['# Oracle monthly resource check v2.1','', 'Collected at (UTC): '+current.settings['collected_at_utc'],
+           'Results describe a collection snapshot, not continuous coverage of the month.', '',
            '| Database | Check | Execution | Result | Checked | Issues |',
            '|---|---|---|---|---|---|']
     lines += ['| {database} | {category} | {execution_status} | {result} | {checked_count} | {issue_count} |'.format(**r) for r in summary]
-    lines+=['','OK = no issue under the defined check; ALERT = threshold/event observed; REVIEW = policy, coverage or measurement needs review; NO_BASELINE = no comparison; FAILED = not checked successfully.',
-            '', 'Fragmentation is not conclusively measured. No automatic maintenance actions are generated.',
-            '', 'See monthly_summary.csv for remarks and evidence paths.']
+    lines+=['','OK = no issue under the defined scope; ALERT = threshold/event observed; REVIEW = issue or incomplete coverage; FAILED = not checked successfully.',
+            '', 'Space waste candidates are estimates, not confirmed fragmentation. No automatic maintenance actions are generated.',
+            '', 'See monthly_summary.csv for coverage remarks and evidence paths.']
     (root/'monthly_summary.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
     return current
 
@@ -398,10 +351,9 @@ def generate(run_dir, baseline_dir=None):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('run_dir',type=Path)
-    parser.add_argument('--baseline',type=Path)
     args=parser.parse_args()
     try:
-        run=generate(args.run_dir,args.baseline)
+        run=generate(args.run_dir)
     except (OSError,ValueError,KeyError,csv.Error,UnicodeError) as exc:
         print('Report failed: '+str(exc),file=sys.stderr)
         return 1

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Oracle 19c resource check v2.0. Read-only dictionary collection.
+# Oracle 19c resource check v2.1. Read-only dictionary collection.
 set -euo pipefail
 umask 077
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 db_list="$script_dir/db_list.conf"
 accounts="$script_dir/functional_accounts.csv"
 output_root="$script_dir/output"
-baseline=""
 threshold=90
 basis=CURRENT
 waste_mb=100
@@ -19,7 +18,6 @@ Usage: bash check_resources.sh [options]
   --db-list FILE         Database config (default: db_list.conf)
   --accounts FILE        Functional account allowlist (default: functional_accounts.csv)
   --output DIR           New run directory will be created beneath DIR
-  --baseline RUN_DIR     Explicit earlier v2 run; never auto-selects a baseline
   --threshold NUMBER    Tablespace alert threshold, strict > (default: 90)
   --basis CURRENT|MAX   Alert denominator (default: CURRENT)
   --waste-mb NUMBER     Table estimate candidate threshold, strict > (default: 100)
@@ -38,11 +36,11 @@ while (( $# )); do
     case "$1" in
         --help|-h) usage; exit 0 ;;
         --collect-only) collect_only=1; shift ;;
-        --db-list|--accounts|--output|--baseline|--threshold|--basis|--waste-mb|--waste-pct|--expiry-days)
+        --db-list|--accounts|--output|--threshold|--basis|--waste-mb|--waste-pct|--expiry-days)
             (( $# >= 2 )) || die "Missing value for $1"
             case "$1" in
                 --db-list) db_list="$2" ;; --accounts) accounts="$2" ;;
-                --output) output_root="$2" ;; --baseline) baseline="$2" ;;
+                --output) output_root="$2" ;;
                 --threshold) threshold="$2" ;; --basis) basis="$2" ;;
                 --waste-mb) waste_mb="$2" ;; --waste-pct) waste_pct="$2" ;;
                 --expiry-days) expiry_days="$2" ;;
@@ -60,14 +58,13 @@ done
 awk -v a="$threshold" -v b="$waste_pct" 'BEGIN {exit !(a<=100 && b<=100)}' || die 'Percent thresholds must be <=100.'
 [[ "$basis" == CURRENT || "$basis" == MAX ]] || die '--basis must be CURRENT or MAX.'
 [[ -f "$db_list" && -f "$accounts" ]] || die 'Database config or accounts CSV not found.'
-[[ -z "$baseline" || -d "$baseline" ]] || die 'Baseline run directory not found.'
 if (( ! collect_only )); then
     command -v python3 >/dev/null || die 'Python3 missing; use --collect-only and report later on a Mac/other host.'
     python3 -c 'import sys; sys.exit(sys.version_info < (3,8))' || die 'Python >=3.8 required.'
 fi
 oraenv_path="$(command -v oraenv || true)"
 [[ -n "$oraenv_path" ]] || die 'oraenv not found; load the Oracle environment first.'
-modules=(metadata tablespace undo table_stats index_stats table_waste index_space user_accounts)
+modules=(metadata tablespace undo table_stats index_stats table_waste user_accounts)
 for module in common "${modules[@]}"; do
     [[ -f "$script_dir/sql/$module.sql" ]] || die "Missing SQL: $module.sql"
 done
@@ -104,7 +101,7 @@ run_dir="$(mktemp -d "$output_root/run_$(date -u '+%Y%m%dT%H%M%SZ')_XXXXXX")"
 cp "$db_list" "$run_dir/db_list.conf"
 cp "$accounts" "$run_dir/functional_accounts.csv"
 printf 'database,module,sid,status,detail\n' > "$run_dir/execution_status.csv"
-printf 'version,2.0\ncollected_at_utc,%s\nthreshold,%s\nbasis,%s\nwaste_mb,%s\nwaste_pct,%s\nexpiry_days,%s\n' \
+printf 'version,2.1\ncollected_at_utc,%s\nthreshold,%s\nbasis,%s\nwaste_mb,%s\nwaste_pct,%s\nexpiry_days,%s\n' \
     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$threshold" "$basis" "$waste_mb" "$waste_pct" "$expiry_days" > "$run_dir/run_settings.csv"
 failed=0
 for (( idx=0; idx<${#dbs[@]}; idx++ )); do
@@ -132,7 +129,7 @@ for (( idx=0; idx<${#dbs[@]}; idx++ )); do
                 cd "$script_dir/sql"
                 if ! sqlplus -L -s "/ as sysdba" @"$module.sql" \
                     "$db" "${pdbs[$idx]}" "${cdbs[$idx]}" "${uniques[$idx]}" \
-                    "$threshold" "$basis" "$expiry_days" "$mode" >"$tmp" 2>>"$log"; then
+                    "$threshold" "$basis" "$expiry_days" "$mode" "$waste_mb" "$waste_pct" >"$tmp" 2>>"$log"; then
                     exit 1
                 fi
                 # WHENEVER SQLERROR does not catch SQL*Plus SP2 errors.
@@ -156,9 +153,8 @@ done
 printf 'Collection saved: %s\n' "$run_dir"
 if (( ! collect_only )); then
     args=("$script_dir/report.py" "$run_dir")
-    [[ -z "$baseline" ]] || args+=(--baseline "$baseline")
     if ! python3 "${args[@]}"; then failed=1; fi
 else
-    printf 'Report pending: python3 report.py "%s" [--baseline PREVIOUS_RUN]\n' "$run_dir"
+    printf 'Report pending: python3 report.py "%s" \n' "$run_dir"
 fi
 exit "$failed"
