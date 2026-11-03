@@ -1,0 +1,10 @@
+# Collected metadata, reports and logs are local operational data.
+/output/
+/run_*/
+*.log
+# Use --db-list / --accounts for local production configuration.
+/*.local.conf
+/*.local.csv
+__pycache__/
+*.py[cod]
+.DS_Store

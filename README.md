@@ -8,6 +8,7 @@
 | --- | --- | --- | --- | --- |
 | SQL Server | 安全与权限 | [批量修复孤立 SQL 用户](sqlserver/security/repair_orphaned_users/) | 扫描孤立 SQL 用户，并将符合条件的用户重新映射到现有同名 SQL Login | 仅预览 |
 | Oracle 19c | 巡检与诊断 | [Oracle Health Check v3.1](oracle/diagnostics/health_check/) | 维护前采集基线，维护后比较本机实例、PDB、服务和对象状态 | 采集与比较（需指定 before / after） |
+| Oracle 19c | 巡检与诊断 | [Oracle Resource Check v2.0](oracle/diagnostics/resource_check/) | 表空间/UNDO、表与索引统计、空间变化及功能账号巡检，生成 CSV/Markdown 月报 | 查询采集并生成报表，基线需显式指定 |
 | PostgreSQL 11+ | 安全与权限 | [统一 schema 对象 owner](postgresql/security/change_schema_object_owner/) | 将指定 schema 内常见对象转移给同一角色，区分重载并处理依附序列 | 仅预览 |
 | PostgreSQL | 安全与权限 | [导出用户/角色迁移 DDL](postgresql/security/migrate_roles/) | 生成角色、角色参数和成员关系的迁移 SQL，不包含密码及对象授权 | 仅查询并输出 DDL |
 | PostgreSQL 12+ | 迁移与验证 | [Schema 迁移验证](postgresql/migration/schema_migration_verifier/) | 比较对象清单与定义、精确行数、权限及状态，可选内容指纹 | 采集临时对象；默认精确行数，内容指纹关闭 |

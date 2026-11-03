@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "source_archive": "Oracle_Resource_Check_v2.0.zip",
+  "archive_sha256": "82ca67a1665dcbe563906b9f01df3c1df005413ba41e763f7cb457bf5131e7f2",
+  "publication_date": "2026-11-03",
+  "original_archive_published": false,
+  "notes": [
+    "The original ZIP and its real database configuration remain local.",
+    "original_sha256.json contains historical hashes of earlier files not included in the ZIP; those earlier files were not verified.",
+    "SHA256SUMS covers the public directory including this manifest but excludes itself, runtime output and caches."
+  ],
+  "files": [
+    {
+      "archive_path": "oracle_resource_check_v2/CHECK_RULES.md",
+      "published_path": "CHECK_RULES.md",
+      "source_sha256": "f0e1d20dc0d408dbf9e8d7abce97d7782a85edd767180d081aa807e90f88c7f8",
+      "disposition": "modified",
+      "published_sha256": "efaa242f5a6f7913250b8ab54448a0e6d3953b3a7aebc1eb32e439fc7774eb72",
+      "reason": "Retained check rules and source links; anonymized database example and clarified repository context and provenance."
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/README.md",
+      "published_path": "README.md",
+      "source_sha256": "bef0f56d96020fb1ba6c846595d3414547801494f74414e2687de739f93f5c22",
+      "disposition": "modified",
+      "published_sha256": "1f2fa61d11a1b06412f433a9e7d91fad4f886d0381f6e16dbeb86fb264ded3e7",
+      "reason": "Rewritten Chinese repository usage, scope, parameters and provenance documentation."
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/check_resources.sh",
+      "published_path": "check_resources.sh",
+      "source_sha256": "e1bc0f37a5a0c936d4800aa00326f90012869f2d9f8e3c55a752f578b043bedc",
+      "disposition": "byte_identical",
+      "published_sha256": "e1bc0f37a5a0c936d4800aa00326f90012869f2d9f8e3c55a752f578b043bedc"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/db_list.conf",
+      "published_path": "db_list.conf",
+      "source_sha256": "4713b6fba9ab833a47fdb4fea711176a84d0828b55d8883e473a19fa24b0f4b5",
+      "disposition": "modified",
+      "published_sha256": "de69afd05f398012ca7b1e81745b0a6d76205f1759eb9808f3ea408e1c01b009",
+      "reason": "Replaced real database mappings with generic public examples."
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/functional_accounts.csv",
+      "published_path": "functional_accounts.csv",
+      "source_sha256": "0a595e51c9d316aa53b5ca51f1d18d3efbe81fac96a7a9ece3471824ba40c987",
+      "disposition": "byte_identical",
+      "published_sha256": "0a595e51c9d316aa53b5ca51f1d18d3efbe81fac96a7a9ece3471824ba40c987"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/functional_accounts.example.csv",
+      "published_path": "functional_accounts.example.csv",
+      "source_sha256": "441391c07dfad9245652375e6cb65bb6f8d38bd86241da479ef52d14127d70bd",
+      "disposition": "modified",
+      "published_sha256": "492c68417b7d4ed0272a0bc0671a0a54a6e2459d755e830d2384307de9f99727",
+      "reason": "Replaced real database label with the generic public example label."
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/original_sha256.json",
+      "published_path": "original_sha256.json",
+      "source_sha256": "f5f6fa97d226fab7f81c2037aab00e232c4671c49b086e14df58d81b8c50ae43",
+      "disposition": "byte_identical",
+      "published_sha256": "f5f6fa97d226fab7f81c2037aab00e232c4671c49b086e14df58d81b8c50ae43"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/report.py",
+      "published_path": "report.py",
+      "source_sha256": "701c5332f412b91051a1b8fd1742de53d96cdfddd1c5ba7b891eefe477846e18",
+      "disposition": "byte_identical",
+      "published_sha256": "701c5332f412b91051a1b8fd1742de53d96cdfddd1c5ba7b891eefe477846e18"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/sql/common.sql",
+      "published_path": "sql/common.sql",
+      "source_sha256": "3ca67cd86eab24c10c9f38e17309bd0b65a28e1202efa7ed03f4ef4900aeb681",
+      "disposition": "byte_identical",
+      "published_sha256": "3ca67cd86eab24c10c9f38e17309bd0b65a28e1202efa7ed03f4ef4900aeb681"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/sql/index_space.sql",
+      "published_path": "sql/index_space.sql",
+      "source_sha256": "b481ba5333113cdcd852ecff8b664f5c61c00abd1e293832186924d7f097a770",
+      "disposition": "byte_identical",
+      "published_sha256": "b481ba5333113cdcd852ecff8b664f5c61c00abd1e293832186924d7f097a770"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/sql/index_stats.sql",
+      "published_path": "sql/index_stats.sql",
+      "source_sha256": "4dcb4ac3c5104525290b6ea68531214af3b9db4ded8a9b32b37c9c69e7a03613",
+      "disposition": "byte_identical",
+      "published_sha256": "4dcb4ac3c5104525290b6ea68531214af3b9db4ded8a9b32b37c9c69e7a03613"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/sql/metadata.sql",
+      "published_path": "sql/metadata.sql",
+      "source_sha256": "7f5dfa7b4f05d7e528515b2c414b2420ff4ae3f215b87ba04c958bde63531cb3",
+      "disposition": "byte_identical",
+      "published_sha256": "7f5dfa7b4f05d7e528515b2c414b2420ff4ae3f215b87ba04c958bde63531cb3"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/sql/table_stats.sql",
+      "published_path": "sql/table_stats.sql",
+      "source_sha256": "61a7ffcd0f0188d310d2d544d03fb2ac6c9e989791296c29e743952d1dfd54eb",
+      "disposition": "byte_identical",
+      "published_sha256": "61a7ffcd0f0188d310d2d544d03fb2ac6c9e989791296c29e743952d1dfd54eb"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/sql/table_waste.sql",
+      "published_path": "sql/table_waste.sql",
+      "source_sha256": "1752c3f418f40c5005536aefcd2c9360767b2deaa55ec65232b8b9a8830d02b9",
+      "disposition": "byte_identical",
+      "published_sha256": "1752c3f418f40c5005536aefcd2c9360767b2deaa55ec65232b8b9a8830d02b9"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/sql/tablespace.sql",
+      "published_path": "sql/tablespace.sql",
+      "source_sha256": "d601424dcb3c9c0054ff40632a5b8bd60a608893913ad82933987ce6865cc393",
+      "disposition": "byte_identical",
+      "published_sha256": "d601424dcb3c9c0054ff40632a5b8bd60a608893913ad82933987ce6865cc393"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/sql/undo.sql",
+      "published_path": "sql/undo.sql",
+      "source_sha256": "ebdccf16e8e361aad2ffcbe9edf2c2661e9a9a992409bac4a635edb4d7639f74",
+      "disposition": "byte_identical",
+      "published_sha256": "ebdccf16e8e361aad2ffcbe9edf2c2661e9a9a992409bac4a635edb4d7639f74"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/sql/user_accounts.sql",
+      "published_path": "sql/user_accounts.sql",
+      "source_sha256": "0667676b27434d5d140fe050297c9ea30cb85728b9c295258a16ff5e221899fa",
+      "disposition": "byte_identical",
+      "published_sha256": "0667676b27434d5d140fe050297c9ea30cb85728b9c295258a16ff5e221899fa"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/tests/test_workflow.py",
+      "published_path": "tests/test_workflow.py",
+      "source_sha256": "14efecf1429697ba721492a1334ba2cd4060fe8657a557a55456443b9cdeec94",
+      "disposition": "byte_identical",
+      "published_sha256": "14efecf1429697ba721492a1334ba2cd4060fe8657a557a55456443b9cdeec94"
+    },
+    {
+      "archive_path": "oracle_resource_check_v2/SHA256SUMS",
+      "published_path": "SHA256SUMS",
+      "source_sha256": "d0074c88159373008b38d8709f9914fbb9506385f2d41f389fba06f73cfeef1e",
+      "disposition": "modified",
+      "reason": "Regenerated for the published directory; its hash is excluded from this manifest to avoid a circular dependency."
+    }
+  ],
+  "added_files": [
+    ".gitignore",
+    "VALIDATION.md",
+    "source-manifest.json"
+  ]
+}
